@@ -1,0 +1,72 @@
+{
+"update_url": "https://clients2.google.com/service/update2/crx",
+
+  "manifest_version": 3,
+  "name": "USA Visa Appointment Rescheduler",
+  "version": "1.31",
+  "permissions": ["activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.usvisa-info.com/*/niv/groups/*"],
+      "js": ["home.js"]
+    },
+    {
+      "matches": [
+        "https://*.usvisa-info.com/*/niv/schedule/*/continue_actions"
+      ],
+      "js": ["continue.js"]
+    },
+    {
+      "matches": [
+        "https://*.usvisa-info.com/*/niv/schedule/*/appointment/print_instructions"
+      ],
+      "js": ["instructions.js"]
+    },
+    {
+      "matches": [
+        "https://*.usvisa-info.com/*/niv/schedule/*/appointment/instructions"
+      ],
+      "js": ["instructions_redirect.js"]
+    },
+    {
+      "matches": ["https://*.usvisa-info.com/*/niv/schedule/*/appointment"],
+      "js": ["appointment.js"]
+    },
+    {
+      "matches": [
+        "https://*.usvisa-info.com/*/niv/schedule/*/appointment?applicants*"
+      ],
+      "js": ["appointment.js"]
+    },
+    {
+      "matches": [
+        "https://*.usvisa-info.com/*/niv/schedule/*/appointment?confirmed_limit_message=1&commit=Continue"
+      ],
+      "js": ["appointment.js"]
+    },
+    {
+      "matches": ["https://ais.usvisa-info.com/*/niv/users/sign_in"],
+      "js": ["signin.js"]
+    },
+    {
+      "matches": ["https://ais.usvisa-info.com/*/niv"],
+      "js": ["presignin.js"]
+    },
+    {
+      "matches": ["https://ais.usvisa-info.com/*/niv/account"],
+      "js": ["presignin.js"]
+    }
+  ]
+}
