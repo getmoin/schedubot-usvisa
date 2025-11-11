@@ -3,8 +3,8 @@
 
   "manifest_version": 3,
   "name": "USA Visa Appointment Rescheduler",
-  "version": "2.1",
-  "description": "Automated visa appointment monitoring with parallel checking, retry logic, audio alerts, and smart token refresh",
+  "version": "2.1.2",
+  "description": "Automated visa appointment monitoring with parallel checking, retry logic, and audio alerts",
   "permissions": ["activeTab"],
   "background": {
     "service_worker": "background.js"

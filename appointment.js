@@ -54,13 +54,15 @@ try {
   const MAX_BOOKING_RETRIES = 3;
   const API_RETRY_ATTEMPTS = 3;
 
-  // V2.1 Enhancement: Track last successful API call for proactive token refresh
-  let lastSuccessfulApiCall = Date.now();
-  const TOKEN_REFRESH_THRESHOLD = 5 * 60 * 1000; // 5 minutes
-
-  // V2 Enhancement: Audio alert system
+  // V2 Enhancement: Audio alert system (completely optional, never blocks execution)
   function playAlert(type) {
+    // Silently fail if audio not supported - never block booking process
     try {
+      // Check if AudioContext is available
+      if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') {
+        return; // Audio not supported, silently skip
+      }
+
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
@@ -75,14 +77,18 @@ try {
         oscillator.start();
         oscillator.stop(audioContext.currentTime + 0.1);
         setTimeout(() => {
-          const osc2 = audioContext.createOscillator();
-          const gain2 = audioContext.createGain();
-          osc2.connect(gain2);
-          gain2.connect(audioContext.destination);
-          osc2.frequency.value = 1000;
-          gain2.gain.setValueAtTime(0.3, audioContext.currentTime);
-          osc2.start();
-          osc2.stop(audioContext.currentTime + 0.2);
+          try {
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+            osc2.connect(gain2);
+            gain2.connect(audioContext.destination);
+            osc2.frequency.value = 1000;
+            gain2.gain.setValueAtTime(0.3, audioContext.currentTime);
+            osc2.start();
+            osc2.stop(audioContext.currentTime + 0.2);
+          } catch (e) {
+            // Silently fail
+          }
         }, 150);
       } else if (type === 'success') {
         // Success sound
@@ -98,7 +104,8 @@ try {
         oscillator.stop(audioContext.currentTime + 0.2);
       }
     } catch (e) {
-      log(`Audio alert failed: ${e.message}`);
+      // Silently fail - audio is optional, never log or block
+      // This ensures booking process is never interrupted
     }
   }
 
@@ -126,37 +133,10 @@ try {
     }
   }
 
-  // V2 Enhancement: Session validation with auto-refresh
-  async function validateSession() {
-    try {
-      const response = await fetch(
-        `https://ais.usvisa-info.com/${country}/niv/schedule/${userId}/appointment`,
-        {
-          method: "HEAD",
-          credentials: "include",
-          redirect: "manual"
-        }
-      );
-
-      // If redirected to login, session is invalid - refresh to get new token
-      if (response.status === 302 || response.status === 401) {
-        log("⚠️ SESSION EXPIRED - Refreshing page to get new token...");
-        playAlert('error');
-
-        // Refresh the page to get new session token
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      log(`Session validation failed: ${error.message}`);
-      return true; // Continue on error to avoid false positives
-    }
-  }
+  // V2.1 Enhancement: Simplified session management
+  // Removed proactive HEAD request validation to avoid ERR_EMPTY_RESPONSE issues
+  // We now rely solely on 401 error detection in actual API calls for token refresh
+  // This is more reliable and doesn't cause unnecessary network errors
 
   // V2 Enhancement: Handle 401 errors in API calls with page refresh
   async function handleApiError(error, context = "API call") {
@@ -464,7 +444,6 @@ try {
     try {
       currentCheckingFacility = facilityIdToCheck;
       const locationName = locationMap[facilityIdToCheck] || `ID: ${facilityIdToCheck}`;
-      log(`Checking ${locationName} (Facility ID: ${facilityIdToCheck})...`);
 
       const response = await fetch(
         `https://ais.usvisa-info.com/${country}/niv/schedule/${userId}/appointment/days/${facilityIdToCheck}.json?appointments[expedite]=false`,
@@ -517,9 +496,6 @@ try {
 
       const availableDates = JSON.parse(result);
 
-      // V2.1: Track successful API call
-      lastSuccessfulApiCall = Date.now();
-
       // FIXED: Add null/array check to prevent crashes
       if (!Array.isArray(availableDates) || availableDates.length === 0) {
         log(`${locationName}: No appointments available`);
@@ -550,7 +526,6 @@ try {
           log(`*** ${locationName}: FOUND BETTER DATE - ${firstAvailable.date} ***`);
           return { facilityId: facilityIdToCheck, date: firstAvailable.date, locationName };
         } else {
-          log(`${locationName}: Date ${firstAvailable.date} doesn't meet criteria`);
         }
       } else {
         log(`${locationName}: No appointments available`);
@@ -748,22 +723,9 @@ try {
   async function readStreamToJSON(startDateFilter, endDateFilter) {
     if (maxChecksPerCycle === 10) {
       try {
-        // V2.1 Enhancement: Proactive token refresh if too much time has passed
-        const timeSinceLastSuccess = Date.now() - lastSuccessfulApiCall;
-        if (timeSinceLastSuccess > TOKEN_REFRESH_THRESHOLD) {
-          log(`⏱️ ${Math.floor(timeSinceLastSuccess / 60000)} minutes since last successful API call - refreshing to renew token...`);
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-          return;
-        }
-
-        // V2 Enhancement: Validate session before checking
-        const sessionValid = await validateSession();
-        if (!sessionValid) {
-          log("Session invalid, page will refresh");
-          return;
-        }
+        // V2.1: Removed proactive HEAD request validation to avoid ERR_EMPTY_RESPONSE
+        // We now rely solely on 401 error detection in actual API calls
+        // This is more reliable and doesn't cause unnecessary errors
 
         // Get the list of facilities to check
         const facilitiesStr = window.localStorage.getItem("facilitiesToCheck") || "94,89,95";
@@ -771,10 +733,7 @@ try {
 
         log("=".repeat(50));
         log(`🔍 Checking ${facilities.length} location(s): ${facilities.map(id => locationMap[id] || id).join(", ")}`);
-        log("=".repeat(50));
 
-        // V2 Enhancement: Parallel facility checking for SPEED!
-        log("🚀 Running parallel checks for maximum speed...");
         const checkPromises = facilities.map(facilityToCheck =>
           checkFacilityForAppointments(facilityToCheck, startDateFilter, endDateFilter)
         );
