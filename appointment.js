@@ -4,6 +4,9 @@ function log(e) {
   return console.log(e), e;
 }
 
+// Note: ERR_BLOCKED_BY_CLIENT errors for external scripts (trustwave, newrelic)
+// are from the visa website itself and blocked by ad blockers. They are harmless.
+
 // REMOVED: reload() function had infinite recursion bug
 // The code after window.location.reload() is unreachable
 // This function is not needed - we use scheduled refresh instead
@@ -25,8 +28,8 @@ try {
     document.getElementsByName("commit")[0].click();
   }
 
-  // Initialize variables
-  let checkInterval = 3000;
+  // Initialize variables - delay will be set dynamically
+  let checkInterval = 1000; // Initial value, will be updated by getRandomDelay()
   let maxChecksPerCycle = 10; // MODIFIED: Always enabled (was license-restricted)
   let facilityId = window.localStorage.getItem("facilityId");
   let userEmail = window.localStorage.getItem("user_email");
@@ -51,16 +54,13 @@ try {
     "95": "Vancouver"
   };
 
-  // FORCE RESET to ONLY Toronto, Calgary, Vancouver - ignore any saved settings
-  const facilitiesToCheck = "94,89,95";
-  window.localStorage.setItem("facilitiesToCheck", facilitiesToCheck);
+  // Set default facilities if not already set
+  if (!window.localStorage.getItem("facilitiesToCheck")) {
+    const facilitiesToCheck = "94,89,95";
+    window.localStorage.setItem("facilitiesToCheck", facilitiesToCheck);
+  }
 
-  // Log configuration (moved after log() is defined)
-  setTimeout(() => {
-    log("=".repeat(60));
-    log("FORCED CONFIGURATION: ONLY Toronto (94), Calgary (89), Vancouver (95)");
-    log("=".repeat(60));
-  }, 0);
+  // Configuration loaded from localStorage
 
   // Create progress popup element
   let progressPopup = document.createElement("div");
@@ -116,8 +116,10 @@ try {
       return div.innerHTML;
     }
 
-    // HARDCODED: Only these 3 locations
-    const selectedLocations = "Toronto, Calgary, Vancouver";
+    // Get selected locations from localStorage
+    const facilitiesStr = window.localStorage.getItem("facilitiesToCheck") || "94,89,95";
+    const facilities = facilitiesStr.split(",").map(f => f.trim()).filter(f => f);
+    const selectedLocations = facilities.map(id => locationMap[id] || `ID: ${id}`).join(", ");
 
     const currentLocationName = currentFacility ?
       (locationMap[currentFacility] || `ID: ${currentFacility}`) :
@@ -132,16 +134,8 @@ try {
     const safeMinDelay = sanitizeText(minDelay);
     const safeMaxDelay = sanitizeText(maxDelay);
 
-    // HARDCODED facilities info
-    const facilitiesHelpHtml = `
-      <div style="margin-top: 4px; padding: 6px; background-color: #e7f3ff; border-left: 3px solid #17a2b8; font-size: 11px;">
-        <div style="font-weight: bold; margin-bottom: 4px;">📍 Fixed Configuration:</div>
-        <div>• ID <strong>94</strong>: Toronto</div>
-        <div>• ID <strong>89</strong>: Calgary</div>
-        <div>• ID <strong>95</strong>: Vancouver</div>
-        <div style="margin-top: 4px; font-style: italic; color: #dc3545;">⚠️ These 3 locations are hardcoded - cannot be changed</div>
-      </div>
-    `;
+    // No additional facilities help needed
+    const facilitiesHelpHtml = ``;
 
     progressPopup.innerHTML = `
       <style>
@@ -517,7 +511,7 @@ try {
             }
           }, 1000);
         } else {
-          checkInterval = 180000 + getRandomDelay();
+          checkInterval = getRandomDelay();
           log("=".repeat(50));
           log(`No better appointments found across all locations. Next check in ${Math.floor(checkInterval / 1000)} seconds`);
           log("=".repeat(50));
