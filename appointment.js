@@ -47,6 +47,138 @@ try {
   let isRunning = window.localStorage.getItem("automationRunning") !== "false";
   let currentCheckingFacility = null;
 
+  // V2 Enhancement: Tracking variables
+  let bookingInProgress = false;
+  let bookingAttempts = 0;
+  let lastBookingError = null;
+  const MAX_BOOKING_RETRIES = 3;
+  const API_RETRY_ATTEMPTS = 3;
+
+  // V2.1 Enhancement: Track last successful API call for proactive token refresh
+  let lastSuccessfulApiCall = Date.now();
+  const TOKEN_REFRESH_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+
+  // V2 Enhancement: Audio alert system
+  function playAlert(type) {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      if (type === 'found') {
+        // Exciting sound for appointment found
+        oscillator.frequency.value = 800;
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.1);
+        setTimeout(() => {
+          const osc2 = audioContext.createOscillator();
+          const gain2 = audioContext.createGain();
+          osc2.connect(gain2);
+          gain2.connect(audioContext.destination);
+          osc2.frequency.value = 1000;
+          gain2.gain.setValueAtTime(0.3, audioContext.currentTime);
+          osc2.start();
+          osc2.stop(audioContext.currentTime + 0.2);
+        }, 150);
+      } else if (type === 'success') {
+        // Success sound
+        oscillator.frequency.value = 1200;
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.3);
+      } else if (type === 'error') {
+        // Error sound
+        oscillator.frequency.value = 300;
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.2);
+      }
+    } catch (e) {
+      log(`Audio alert failed: ${e.message}`);
+    }
+  }
+
+  // V2 Enhancement: Retry wrapper for API calls with 401 handling
+  async function retryApiCall(apiFunction, retries = API_RETRY_ATTEMPTS) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await apiFunction();
+      } catch (error) {
+        log(`API call attempt ${attempt}/${retries} failed: ${error.message}`);
+
+        // Check for 401 and refresh page if needed
+        const canContinue = await handleApiError(error, "API retry");
+        if (!canContinue) {
+          // Page will refresh, stop retrying
+          throw error;
+        }
+
+        if (attempt === retries) {
+          throw error;
+        }
+        // Wait before retry: 1s, 2s, 3s
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+  }
+
+  // V2 Enhancement: Session validation with auto-refresh
+  async function validateSession() {
+    try {
+      const response = await fetch(
+        `https://ais.usvisa-info.com/${country}/niv/schedule/${userId}/appointment`,
+        {
+          method: "HEAD",
+          credentials: "include",
+          redirect: "manual"
+        }
+      );
+
+      // If redirected to login, session is invalid - refresh to get new token
+      if (response.status === 302 || response.status === 401) {
+        log("⚠️ SESSION EXPIRED - Refreshing page to get new token...");
+        playAlert('error');
+
+        // Refresh the page to get new session token
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      log(`Session validation failed: ${error.message}`);
+      return true; // Continue on error to avoid false positives
+    }
+  }
+
+  // V2 Enhancement: Handle 401 errors in API calls with page refresh
+  async function handleApiError(error, context = "API call") {
+    log(`❌ ${context} error: ${error.message}`);
+
+    // Check if it's a 401 error
+    if (error.message.includes("401") || error.message.includes("Unauthorized")) {
+      log("🔄 401 Unauthorized detected - Refreshing page to renew session...");
+      playAlert('error');
+
+      // Wait a bit then refresh to get new token
+      setTimeout(() => {
+        log("Refreshing page now...");
+        window.location.reload();
+      }, 3000);
+
+      return false;
+    }
+
+    return true; // Continue for other errors
+  }
+
   // Location mapping - ONLY the 3 locations we care about
   const locationMap = {
     "94": "Toronto",
@@ -104,7 +236,7 @@ try {
   }
 
   // MODIFIED: Simplified progress popup - HARDCODED 3 locations only
-  function updateProgressPopup(message, startDate, endDate, currentFacility = null, targetDate = null) {
+  function updateProgressPopup(message, startDate, endDate, currentFacility = null, targetDate = null, bookingStatus = null) {
     const minDelay = window.localStorage.getItem("minDelay") || "5";
     const maxDelay = window.localStorage.getItem("maxDelay") || "30";
     const isRunning = window.localStorage.getItem("automationRunning") !== "false";
@@ -178,6 +310,18 @@ try {
           <div><strong>Looking for dates before:</strong> ${safeTargetDate}</div>
           <div><strong>Current appointment:</strong> ${sanitizeText(currentAppointmentDate.toLocaleDateString())}</div>
         </div>
+
+        <!-- Booking Status Section (V2 Enhancement) -->
+        ${bookingStatus ? `
+        <div class="info-section" style="border-left-color: ${bookingStatus.type === 'success' ? '#28a745' : bookingStatus.type === 'error' ? '#dc3545' : '#ffc107'}; background-color: ${bookingStatus.type === 'success' ? '#d4edda' : bookingStatus.type === 'error' ? '#f8d7da' : '#fff3cd'};">
+          <div style="font-weight: bold; margin-bottom: 4px;">
+            ${bookingStatus.type === 'progress' ? '⏳' : bookingStatus.type === 'success' ? '✅' : '❌'}
+            ${sanitizeText(bookingStatus.title)}
+          </div>
+          <div style="font-size: 12px;">${sanitizeText(bookingStatus.message)}</div>
+          ${bookingStatus.attempts ? `<div style="font-size: 11px; margin-top: 4px;">Attempt: ${bookingStatus.attempts}/${MAX_BOOKING_RETRIES}</div>` : ''}
+        </div>
+        ` : ''}
 
         <!-- Locations Being Monitored -->
         <div class="info-section" style="border-left-color: #28a745;">
@@ -262,9 +406,11 @@ try {
     return date;
   }
 
-  async function getAppointmentTime(date) {
+  async function getAppointmentTime(date, facilityIdOverride = null) {
+    const facilityToUse = facilityIdOverride || facilityId;
+
     const response = await fetch(
-      `https://ais.usvisa-info.com/${country}/niv/schedule/${userId}/appointment/times/${facilityId}.json?date=${date}&appointments[expedite]=false`,
+      `https://ais.usvisa-info.com/${country}/niv/schedule/${userId}/appointment/times/${facilityToUse}.json?date=${date}&appointments[expedite]=false`,
       {
         headers: {
           accept: "application/json, text/javascript, */*; q=0.01",
@@ -292,7 +438,14 @@ try {
     }
 
     if (!response.ok) {
-      throw new Error("Network response was not ok");
+      const error = new Error(`Network response was not ok: ${response.status}`);
+
+      // Handle 401 errors specifically
+      if (response.status === 401) {
+        await handleApiError(error, "getAppointmentTime");
+      }
+
+      throw error;
     }
 
     const reader = response.body.getReader();
@@ -344,6 +497,12 @@ try {
 
       if (!response.ok) {
         log(`${locationName}: Error ${response.status}`);
+
+        // Handle 401 errors specifically
+        if (response.status === 401) {
+          await handleApiError(new Error(`Network response was not ok: ${response.status}`), `${locationName} check`);
+        }
+
         return null;
       }
 
@@ -357,6 +516,9 @@ try {
       }
 
       const availableDates = JSON.parse(result);
+
+      // V2.1: Track successful API call
+      lastSuccessfulApiCall = Date.now();
 
       // FIXED: Add null/array check to prevent crashes
       if (!Array.isArray(availableDates) || availableDates.length === 0) {
@@ -401,123 +563,269 @@ try {
     }
   }
 
+  // V2 Enhancement: Advanced booking function with retry and multiple time slots
+  async function attemptBooking(appointment, retryCount = 0) {
+    bookingInProgress = true;
+    bookingAttempts = retryCount + 1;
+
+    const statusUpdate = {
+      type: 'progress',
+      title: 'Booking Appointment',
+      message: `Trying to book ${appointment.locationName} on ${appointment.date}`,
+      attempts: bookingAttempts
+    };
+
+    updateProgressPopup(
+      `Attempting to book appointment (Try ${bookingAttempts}/${MAX_BOOKING_RETRIES})...`,
+      window.localStorage.getItem("startDate") || "",
+      window.localStorage.getItem("endDate") || "",
+      appointment.facilityId,
+      appointment.date,
+      statusUpdate
+    );
+
+    try {
+      log(`🎯 BOOKING ATTEMPT ${bookingAttempts}/${MAX_BOOKING_RETRIES} - ${appointment.locationName} on ${appointment.date}`);
+
+      // Update facility dropdown
+      const facilityDropdown = document.getElementById("appointments_consulate_appointment_facility_id");
+      if (facilityDropdown) {
+        facilityDropdown.value = appointment.facilityId;
+        facilityId = appointment.facilityId;
+      }
+
+      // Update date field
+      const dateField = document.getElementById("appointments_consulate_appointment_date");
+      if (!dateField) {
+        throw new Error("Date field not found on page");
+      }
+      dateField.value = appointment.date;
+      if (dateField.click) dateField.click();
+
+      // Wait a bit for page to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Fetch available times with retry logic
+      const timesData = await retryApiCall(async () => {
+        return await getAppointmentTime(appointment.date, appointment.facilityId);
+      });
+
+      if (!timesData || !timesData.available_times || timesData.available_times.length === 0) {
+        throw new Error("No time slots available for this date");
+      }
+
+      log(`✓ Found ${timesData.available_times.length} time slot(s): ${timesData.available_times.join(", ")}`);
+
+      // V2 Enhancement: Try ALL available time slots, not just the first one
+      for (let timeIndex = 0; timeIndex < timesData.available_times.length; timeIndex++) {
+        const timeSlot = timesData.available_times[timeIndex];
+        log(`Trying time slot ${timeIndex + 1}/${timesData.available_times.length}: ${timeSlot}`);
+
+        try {
+          const timeDropdown = document.getElementById("appointments_consulate_appointment_time");
+          if (!timeDropdown) {
+            throw new Error("Time dropdown not found");
+          }
+
+          // Clear existing options and add new one
+          timeDropdown.innerHTML = '<option value="">Select Time</option>';
+          const timeOption = document.createElement("option");
+          timeOption.value = timeSlot;
+          timeOption.textContent = timeSlot;
+          timeDropdown.appendChild(timeOption);
+          timeDropdown.value = timeSlot;
+
+          log(`Selected time: ${timeSlot}`);
+
+          // Try to submit
+          const submitButton = document.getElementById("appointments_submit");
+          if (!submitButton) {
+            throw new Error("Submit button not found");
+          }
+
+          submitButton.disabled = false;
+          submitButton.click();
+
+          // Wait for confirmation dialog
+          await new Promise(resolve => setTimeout(resolve, 1500));
+
+          const confirmButton = document.querySelector("a.alert");
+          if (confirmButton) {
+            log("✅ BOOKING SUCCESSFUL! Confirming...");
+            playAlert('success');
+
+            const successStatus = {
+              type: 'success',
+              title: 'Booking Successful!',
+              message: `Booked ${appointment.locationName} on ${appointment.date} at ${timeSlot}`,
+              attempts: bookingAttempts
+            };
+
+            updateProgressPopup(
+              "✅ Booking confirmed! Redirecting...",
+              window.localStorage.getItem("startDate") || "",
+              window.localStorage.getItem("endDate") || "",
+              appointment.facilityId,
+              appointment.date,
+              successStatus
+            );
+
+            confirmButton.click();
+
+            setTimeout(() => {
+              document.location.href = `https://ais.usvisa-info.com/${country}/niv/account`;
+            }, 3000);
+
+            bookingInProgress = false;
+            return true; // Success!
+          }
+
+          // If no confirm button, try next time slot
+          log(`Time slot ${timeSlot} didn't work, trying next...`);
+
+        } catch (timeSlotError) {
+          log(`Error with time slot ${timeSlot}: ${timeSlotError.message}`);
+          // Continue to next time slot
+        }
+      }
+
+      // If we exhausted all time slots, throw error
+      throw new Error("All time slots failed or were unavailable");
+
+    } catch (error) {
+      lastBookingError = error.message;
+      log(`❌ Booking attempt ${bookingAttempts} failed: ${error.message}`);
+
+      // Retry if we haven't exceeded max retries
+      if (bookingAttempts < MAX_BOOKING_RETRIES) {
+        log(`Retrying in 2 seconds... (${bookingAttempts}/${MAX_BOOKING_RETRIES})`);
+        playAlert('error');
+
+        const retryStatus = {
+          type: 'error',
+          title: 'Booking Failed - Retrying',
+          message: `${error.message}. Retrying...`,
+          attempts: bookingAttempts
+        };
+
+        updateProgressPopup(
+          `Booking failed. Retrying (${bookingAttempts}/${MAX_BOOKING_RETRIES})...`,
+          window.localStorage.getItem("startDate") || "",
+          window.localStorage.getItem("endDate") || "",
+          appointment.facilityId,
+          appointment.date,
+          retryStatus
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return await attemptBooking(appointment, bookingAttempts);
+      } else {
+        log(`❌ BOOKING FAILED after ${MAX_BOOKING_RETRIES} attempts`);
+        playAlert('error');
+
+        const failStatus = {
+          type: 'error',
+          title: 'Booking Failed',
+          message: `Could not book after ${MAX_BOOKING_RETRIES} attempts: ${error.message}`,
+          attempts: bookingAttempts
+        };
+
+        updateProgressPopup(
+          `Booking failed after ${MAX_BOOKING_RETRIES} attempts`,
+          window.localStorage.getItem("startDate") || "",
+          window.localStorage.getItem("endDate") || "",
+          appointment.facilityId,
+          appointment.date,
+          failStatus
+        );
+
+        bookingInProgress = false;
+        return false;
+      }
+    }
+  }
+
   async function readStreamToJSON(startDateFilter, endDateFilter) {
     if (maxChecksPerCycle === 10) {
       try {
-        // Get the list of facilities to check - ONLY Toronto, Calgary, Vancouver
+        // V2.1 Enhancement: Proactive token refresh if too much time has passed
+        const timeSinceLastSuccess = Date.now() - lastSuccessfulApiCall;
+        if (timeSinceLastSuccess > TOKEN_REFRESH_THRESHOLD) {
+          log(`⏱️ ${Math.floor(timeSinceLastSuccess / 60000)} minutes since last successful API call - refreshing to renew token...`);
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+          return;
+        }
+
+        // V2 Enhancement: Validate session before checking
+        const sessionValid = await validateSession();
+        if (!sessionValid) {
+          log("Session invalid, page will refresh");
+          return;
+        }
+
+        // Get the list of facilities to check
         const facilitiesStr = window.localStorage.getItem("facilitiesToCheck") || "94,89,95";
         const facilities = facilitiesStr.split(",").map(f => f.trim()).filter(f => f);
 
         log("=".repeat(50));
-        log(`Checking ${facilities.length} location(s): ${facilities.map(id => locationMap[id] || id).join(", ")}`);
+        log(`🔍 Checking ${facilities.length} location(s): ${facilities.map(id => locationMap[id] || id).join(", ")}`);
         log("=".repeat(50));
 
-        // Check all facilities
+        // V2 Enhancement: Parallel facility checking for SPEED!
+        log("🚀 Running parallel checks for maximum speed...");
+        const checkPromises = facilities.map(facilityToCheck =>
+          checkFacilityForAppointments(facilityToCheck, startDateFilter, endDateFilter)
+        );
+
+        const results = await Promise.allSettled(checkPromises);
+
+        // Find the best appointment from all results
         let bestAppointment = null;
-        for (const facilityToCheck of facilities) {
-          const result = await checkFacilityForAppointments(facilityToCheck, startDateFilter, endDateFilter);
-
-          if (result) {
-            if (!bestAppointment || new Date(result.date) < new Date(bestAppointment.date)) {
-              bestAppointment = result;
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value) {
+            if (!bestAppointment || new Date(result.value.date) < new Date(bestAppointment.date)) {
+              bestAppointment = result.value;
             }
+          } else if (result.status === 'rejected') {
+            log(`Facility ${facilities[index]} check failed: ${result.reason}`);
           }
+        });
 
-          // Add a small delay between facility checks to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        // If we found a better appointment, book it
+        // If we found a better appointment, book it with V2 enhanced booking
         if (bestAppointment) {
           log("=".repeat(50));
-          log(`*** BOOKING BEST APPOINTMENT FOUND ***`);
-          log(`Location: ${bestAppointment.locationName}`);
-          log(`Date: ${bestAppointment.date}`);
+          log(`🎉 *** BETTER APPOINTMENT FOUND ***`);
+          log(`📍 Location: ${bestAppointment.locationName}`);
+          log(`📅 Date: ${bestAppointment.date}`);
           log("=".repeat(50));
 
+          // Play exciting alert sound
+          playAlert('found');
+
+          // Store appointment details
           window.localStorage.setItem("available_date", bestAppointment.date);
           window.localStorage.setItem("facilityId", bestAppointment.facilityId);
 
-          // Update the facility dropdown if it exists
-          const facilityDropdown = document.getElementById("appointments_consulate_appointment_facility_id");
-          if (facilityDropdown) {
-            facilityDropdown.value = bestAppointment.facilityId;
+          // V2: Use enhanced booking function with retry logic
+          const bookingSuccess = await attemptBooking(bestAppointment);
+
+          if (!bookingSuccess) {
+            // If booking failed after all retries, continue checking
+            log("⚠️ Booking failed, will continue checking for appointments");
+            checkInterval = getRandomDelay();
           }
-
-          // Set the date field with error handling
-          const dateField = document.getElementById("appointments_consulate_appointment_date");
-          if (!dateField) {
-            log("ERROR: Date field not found, cannot book appointment");
-            return;
-          }
-          dateField.value = bestAppointment.date;
-
-          setTimeout(async () => {
-            try {
-              // Trigger date selection
-              if (dateField) dateField.click();
-
-              // Get available times for the date
-              const timesData = await getAppointmentTime(bestAppointment.date);
-
-              // FIXED: Add null check for timesData
-              if (!timesData || !timesData.available_times || timesData.available_times.length === 0) {
-                log("ERROR: No available times found");
-                return;
-              }
-
-              log("Available times: " + timesData.available_times[0]);
-              window.localStorage.setItem("available_time", timesData.available_times);
-
-              // Add time option to dropdown
-              const timeDropdown = document.getElementById("appointments_consulate_appointment_time");
-              if (!timeDropdown) {
-                log("ERROR: Time dropdown not found");
-                return;
-              }
-
-              const timeOption = document.createElement("option");
-              timeOption.value = timesData.available_times[0];
-              timeOption.textContent = timesData.available_times[0]; // FIXED: Use textContent instead of innerHTML
-              timeDropdown.appendChild(timeOption);
-
-              // Select the time
-              timeDropdown.selectedIndex = 1;
-              timeDropdown.value = timesData.available_times[0];
-
-              log("Selected time: " + timeDropdown.value);
-
-              // Enable and click submit button
-              const submitButton = document.getElementById("appointments_submit");
-              if (submitButton) {
-                submitButton.disabled = false;
-                submitButton.click();
-
-                // Confirm booking
-                setTimeout(() => {
-                  const confirmButton = document.querySelector("a.alert");
-                  if (confirmButton) {
-                    confirmButton.click();
-                    setTimeout(() => {
-                      document.location.href = `https://ais.usvisa-info.com/${country}/niv/account`;
-                    }, 5000);
-                  }
-                }, 1000);
-              } else {
-                log("ERROR: Submit button not found");
-              }
-            } catch (error) {
-              console.error("Error during booking process:", error);
-            }
-          }, 1000);
         } else {
           checkInterval = getRandomDelay();
           log("=".repeat(50));
-          log(`No better appointments found across all locations. Next check in ${Math.floor(checkInterval / 1000)} seconds`);
+          log(`ℹ️ No better appointments found. Next check in ${Math.floor(checkInterval / 1000)} seconds`);
           log("=".repeat(50));
         }
       } catch (error) {
-        console.error("Error reading stream:", error);
+        console.error("❌ Error during appointment check:", error);
+        lastBookingError = error.message;
+        checkInterval = getRandomDelay();
       }
     }
   }

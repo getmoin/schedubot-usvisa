@@ -1,24 +1,33 @@
-# USA Visa Appointment Extension
-
+# USA Visa Appointment Extension V2
 
 ## What It Is
 
 Automated Chrome, (Brave, Vivaldi or any chrome fork) extension that monitors the US visa appointment system and automatically books earlier appointment dates when they become available.
 
 **Target Website:** `https://ais.usvisa-info.com/[country]/niv/schedule/[userId]/appointment`
-Give a ⭐ if you find this useful 
+Give a ⭐ if you find this useful
 
 ---
 
 ## Key Features
 
-- Continuous monitoring every ~3 minutes
+### Core Features
+- **Lightning-fast parallel checking** - Checks all locations simultaneously for maximum speed
 - Multi-location checking (Toronto, Calgary, Vancouver)
 - Automatic booking when better dates are found
 - Date range filtering
 - Start/Stop controls
-- Random delays to avoid detection
-- XSS protection and error handling
+- Fully customizable delay settings (1 second to 5 minutes)
+
+### V2 Enhancements (New!)
+- 🚀 **Parallel Facility Checking** - All locations checked simultaneously instead of sequentially
+- 🔄 **Smart Retry Logic** - Up to 3 automatic retry attempts if booking fails
+- 🎯 **Multiple Time Slot Attempts** - Tries ALL available time slots, not just the first one
+- 🔐 **Session Validation** - Automatically checks if you're still logged in
+- 🔔 **Audio Alerts** - Sound notifications when appointments are found or booking succeeds/fails
+- 📊 **Real-time Status Updates** - See exactly what's happening with booking attempts
+- 🛡️ **Enhanced Error Recovery** - Robust error handling for edge cases and race conditions
+- 📝 **Detailed Logging** - Better debugging with emoji-enhanced console logs
 
 ---
 
@@ -106,27 +115,70 @@ The control panel shows:
    - Applies your date range filters
    - Identifies the best (earliest) appointment
 
-### Booking Process
+### Booking Process (V2 Enhanced)
 
 When a qualifying appointment is found:
 
-1. Selects the facility from dropdown
-2. Sets the appointment date
-3. Fetches available times for that date
-4. Selects the first available time slot
-5. Submits the appointment form
-6. Confirms the booking
-7. Redirects to your account page
+1. **Sound Alert** - Plays an audio notification
+2. **Session Validation** - Verifies you're still logged in
+3. **Facility Selection** - Selects the facility from dropdown
+4. **Date Selection** - Sets the appointment date
+5. **Fetch Time Slots** - Gets all available times with retry logic (up to 3 attempts)
+6. **Smart Time Selection** - Tries ALL available time slots until one succeeds
+7. **Form Submission** - Submits the appointment form
+8. **Confirmation** - Confirms the booking
+9. **Success Alert** - Plays success sound and shows status
+10. **Redirect** - Redirects to your account page
+
+**If Booking Fails:**
+- Automatically retries up to 3 times
+- Tries different time slots on each attempt
+- Shows detailed error messages
+- Continues checking for more appointments if all retries fail
 
 ---
 
 ## Safety Features
 
-- **Random Delays:** Prevents detection by varying check intervals
+- **Random Delays:** Prevents detection by varying check intervals (fully customizable from UI)
 - **XSS Protection:** All user inputs are sanitized
-- **Error Handling:** Graceful handling of API failures
-- **Session Management:** Uses your existing browser session
+- **Error Handling:** Graceful handling of API failures with automatic retry
+- **Session Management:** Uses your existing browser session with automatic validation
 - **No External Servers:** 100% client-side operation
+- **Rate Limiting Protection:** Configurable delays and retry logic to avoid triggering security measures
+
+---
+
+## V2 Performance Optimizations
+
+### For Peak Times (7pm EST slot openings)
+
+When slots open at 7pm EST, every millisecond counts. V2 is optimized for these scenarios:
+
+1. **Set Aggressive Timing:**
+   - Min Delay: 1-2 seconds
+   - Max Delay: 2-5 seconds
+
+2. **Parallel Checking:**
+   - All 3 locations checked simultaneously
+   - No sequential delays between facilities
+
+3. **Race Condition Handling:**
+   - If someone books the slot before you, automatically tries next time slot
+   - Up to 3 retry attempts
+   - Tries all available times, not just the first one
+
+4. **Speed Improvements:**
+   - Reduced wait times between steps
+   - Parallel API calls where possible
+   - Immediate booking attempt when slot found
+
+**Example Configuration for Peak Times:**
+```
+Min Delay: 1 second
+Max Delay: 3 seconds
+Result: Checks every 1-3 seconds across all locations
+```
 
 ---
 
@@ -148,8 +200,21 @@ When a qualifying appointment is found:
 ### API Errors
 
 - **403 Forbidden:** Increase random delays or reduce check frequency
-- **401 Unauthorized:** Log out and log back into the visa portal
+- **401 Unauthorized:** Extension will auto-detect and stop. Log back in and restart
 - **500 Server Error:** Website may be under maintenance, try later
+
+### Audio Not Working
+
+- Check browser permissions - allow sound for the visa website
+- Some browsers require user interaction before playing audio
+- Click on the page once to activate audio context
+
+### Booking Attempts Failing
+
+- Check console logs for detailed error messages
+- V2 shows real-time status in the control panel
+- Extension will retry automatically up to 3 times
+- If all retries fail, it continues checking for new appointments
 
 ---
 
@@ -167,7 +232,32 @@ When a qualifying appointment is found:
 - **No Backend:** Runs entirely in your browser
 - **Storage:** Uses localStorage for settings (no passwords stored)
 - **Security:** All API calls use HTTPS with your session cookies
-- **Main File:** `appointment.js` (553 lines)
+- **Main File:** `appointment.js` (~770 lines with V2 enhancements)
+- **V2 Architecture:**
+  - Parallel async operations with `Promise.allSettled`
+  - Recursive retry logic with exponential backoff
+  - Web Audio API for sound notifications
+  - Session validation via HEAD requests
+
+---
+
+## What's New in V2
+
+### Speed & Reliability
+- **3x faster checking** - Parallel facility checks instead of sequential
+- **Race condition resistant** - Tries multiple time slots and retries automatically
+- **No more missed slots** - Even if first time fails, tries all available times
+
+### User Experience
+- **Real-time feedback** - See exactly what's happening
+- **Audio alerts** - Know when appointments are found without watching
+- **Better error messages** - Understand what went wrong and what's being tried
+
+### Technical Improvements
+- **Session monitoring** - Auto-detects when you're logged out
+- **API retry logic** - Handles temporary network failures
+- **Enhanced logging** - Emoji-enhanced console logs for easier debugging
+- **Robust error recovery** - Continues working even after failures
 
 ---
 
