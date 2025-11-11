@@ -1,7 +1,7 @@
 # Developer Guide - USA Visa Appointment Extension
 
-**Version:** 2.1 Secure & Reliable
-**Last Updated:** 2025-10-27
+**Version:** 2.1.2
+**Last Updated:** 2025-11-10
 **Target:** Chrome/Chromium Extension (Manifest V3)
 
 ---
@@ -35,14 +35,15 @@ Automated Chrome extension that monitors the US visa appointment system and auto
 - **Calgary** (Facility ID: 89)
 - **Vancouver** (Facility ID: 95)
 
-### **Key Features**
-- ✅ Continuous monitoring every ~3 minutes
-- ✅ Multi-location checking (3 locations simultaneously)
-- ✅ Automatic booking when criteria met
+### **Key Features (V2.1.2)**
+- ✅ Parallel facility checking (3x faster - all locations checked simultaneously)
+- ✅ Smart retry logic (up to 3 attempts with different time slots)
+- ✅ Race condition handling (tries ALL available time slots, not just first)
+- ✅ Auto session refresh (401 error detection and automatic page reload)
+- ✅ Optional audio alerts (never blocks booking process)
+- ✅ Fully customizable delays (1 second to 5 minutes)
+- ✅ Real-time status updates in UI
 - ✅ Date range filtering
-- ✅ Start/Stop controls
-- ✅ Session maintenance
-- ✅ Random delay to avoid detection
 - ✅ XSS protection and error handling
 
 ---
@@ -205,31 +206,34 @@ US Visa/
     └── FINAL_CONFIGURATION.md    # Hardcoded config details
 ```
 
-### **Main File: appointment.js (553 lines)**
+### **Main File: appointment.js (~800 lines)**
 
-**Structure:**
+**Structure (V2.1.2):**
 ```javascript
-// Lines 1-5: Globals and utility functions
+// Lines 1-10: Globals and utility functions
 let country = ...;
 function log(e) { ... }
 
 // Lines 11-22: Initial page handlers (reschedule, maintenance)
 if ("Reschedule Appointment" === ...) { ... }
 
-// Lines 24-552: Main try-catch block containing:
+// Lines 24-800: Main try-catch block containing:
 try {
-  // Lines 31-63: Variable initialization
-  // Lines 65-68: UI popup creation
-  // Lines 70-92: Page handlers
-  // Lines 94-103: Extract remaining attempts
-  // Lines 106-250: updateProgressPopup() function
-  // Lines 252-260: addMonths() utility
-  // Lines 262-304: getAppointmentTime() API call
-  // Lines 306-434: checkFacilityForAppointments() API call
-  // Lines 436-526: readStreamToJSON() - main checking logic
-  // Lines 528-533: getRandomDelay() utility
-  // Lines 535-596: runLoop() - main automation loop
-  // Lines 598-602: Page refresh scheduler
+  // Lines 31-53: Variable initialization
+  // Lines 54-107: Audio alert system (playAlert function)
+  // Lines 108-112: Sanitization function
+  // Lines 113-132: Extract appointment attempts
+  // Lines 133-157: 401 error handler (handleApiError)
+  // Lines 158-160: Session validation (simplified in V2.1.1)
+  // Lines 162-170: UI popup creation
+  // Lines 172-377: updateProgressPopup() function
+  // Lines 379-387: addMonths() utility
+  // Lines 389-448: getAppointmentTime() API call with retry logic
+  // Lines 450-604: checkFacilityForAppointments() API call with 401 handling
+  // Lines 605-640: Parallel facility checking (Promise.allSettled)
+  // Lines 642-675: getRandomDelay() utility
+  // Lines 677-817: Enhanced booking with retry and multiple time slots
+  // Lines 819-830: runLoop() - main automation loop
 
 } catch (exception) {
   // Error handler
@@ -240,7 +244,283 @@ try {
 
 ## 🔑 Key Components
 
-### **1. Initialization (Lines 31-68)**
+## 🚀 V2.1 Enhancements
+
+### **Overview of V2.1 Changes**
+
+V2.1 introduced major performance and reliability improvements to handle the critical 7pm EST slot opening scenario where appointments get booked within seconds.
+
+### **1. Parallel Facility Checking (3x Speed Improvement)**
+
+**Problem:** V1 checked facilities sequentially with 1-second delays between each:
+```javascript
+// V1 - Sequential (slow)
+for (const facilityId of facilities) {
+  await checkFacilityForAppointments(facilityId);
+  await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+}
+// Total time: 3+ seconds
+```
+
+**Solution:** V2.1 checks all facilities simultaneously:
+```javascript
+// V2.1 - Parallel (fast)
+const checkPromises = facilities.map(facilityToCheck =>
+  checkFacilityForAppointments(facilityToCheck, startDateFilter, endDateFilter)
+);
+const results = await Promise.allSettled(checkPromises);
+// Total time: ~1 second (3x faster!)
+```
+
+**Technical Details:**
+- Uses `Promise.allSettled()` to handle parallel async operations
+- Each facility gets its own promise that resolves independently
+- Results are collected and best appointment is selected
+- Failure in one facility doesn't affect others
+
+---
+
+### **2. Smart Retry Logic (Race Condition Handling)**
+
+**Problem:** When slots open at 7pm, multiple users try to book simultaneously. V1 would try once and give up:
+```javascript
+// V1 - Single attempt
+submitButton.click();
+if (confirmButton) {
+  confirmButton.click(); // Success
+} else {
+  // Give up - slot was taken
+}
+```
+
+**Solution:** V2.1 tries ALL available time slots and retries up to 3 times:
+```javascript
+// V2.1 - Multiple attempts with retry logic
+for (let attempt = 1; attempt <= 3; attempt++) {
+  log(`📅 Booking attempt ${attempt}/3...`);
+
+  for (let timeIndex = 0; timeIndex < timesData.available_times.length; timeIndex++) {
+    const timeSlot = timesData.available_times[timeIndex];
+    log(`Trying time slot ${timeIndex + 1}/${timesData.available_times.length}: ${timeSlot}`);
+
+    // Try this time slot
+    timeDropdown.value = timeSlot;
+    submitButton.click();
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const confirmButton = document.querySelector("a.alert");
+    if (confirmButton) {
+      log("✅ BOOKING SUCCESSFUL!");
+      playAlert('success');
+      confirmButton.click();
+      return true; // Success!
+    }
+    // If failed, try next time slot
+  }
+
+  // All time slots failed, retry from beginning
+  if (attempt < 3) {
+    log(`⚠️ Attempt ${attempt} failed. Retrying in 2 seconds...`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+}
+```
+
+**Key Benefits:**
+- If first time slot is taken by someone else, tries the next available time
+- Retries up to 3 times with 2-second delays
+- Dramatically increases success rate during race conditions
+- Shows real-time status: "Trying time slot 2/5...", "Attempt 2/3..."
+
+---
+
+### **3. Auto Session Refresh (401 Error Detection)**
+
+**Problem:** V1 would get 401 errors when session expired and keep retrying infinitely:
+```javascript
+// V1 - Infinite retry loop on 401
+response = await fetch(url);
+if (!response.ok) {
+  log("Error: " + response.status); // Logs 401 forever
+  // Continues retrying with expired token
+}
+```
+
+**Solution:** V2.1 detects 401 errors and auto-refreshes page:
+```javascript
+// V2.1 - Smart 401 handling
+async function handleApiError(error, context = "API call") {
+  log(`❌ ${context} error: ${error.message}`);
+
+  if (error.message.includes("401") || error.message.includes("Unauthorized")) {
+    log("🔄 401 Unauthorized detected - Refreshing page to renew session...");
+    playAlert('error');
+    setTimeout(() => {
+      log("Refreshing page now...");
+      window.location.reload(); // Auto-refresh to get new token
+    }, 3000);
+    return false;
+  }
+  return true;
+}
+
+// Integrated into all API calls
+const response = await fetch(url, options);
+if (!response.ok) {
+  const continueOperation = await handleApiError(
+    new Error(`HTTP ${response.status}: ${response.statusText}`),
+    `API call to ${url}`
+  );
+  if (!continueOperation) return null; // Stop retrying if 401
+}
+```
+
+**Key Benefits:**
+- Detects 401 errors automatically
+- Refreshes page after 3 seconds (time to read error message)
+- Plays error sound for user notification
+- Stops infinite retry loops
+- User just needs to log back in and restart
+
+---
+
+### **4. Optional Audio Alerts (Never Blocks Booking)**
+
+**Problem:** V2.0 had audio alerts but they could throw errors in some browsers/contexts and potentially block booking.
+
+**Solution:** V2.1.2 made audio completely optional with silent failure:
+```javascript
+function playAlert(type) {
+  try {
+    // Check if audio is supported
+    if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') {
+      return; // Audio not supported, silently skip
+    }
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    // Configure based on alert type
+    if (type === 'found') {
+      oscillator.frequency.value = 800; // Higher pitch for found
+      gainNode.gain.value = 0.3;
+    } else if (type === 'success') {
+      // Play success melody (3 ascending notes)
+      // ... configuration
+    } else if (type === 'error') {
+      oscillator.frequency.value = 200; // Lower pitch for error
+      gainNode.gain.value = 0.4;
+    }
+
+    // Play sound
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + duration);
+
+  } catch (e) {
+    // Silently fail - audio is optional, never log or block booking
+    // Booking process continues unaffected
+  }
+}
+```
+
+**Alert Types:**
+- `'found'`: High pitch beep when appointment found (800 Hz)
+- `'success'`: Three ascending notes when booking succeeds (C-E-G chord)
+- `'error'`: Low pitch beep for errors (200 Hz)
+
+**Key Benefits:**
+- User gets audio notification when appointments found
+- Never blocks or slows down booking process
+- Works across different browsers (AudioContext / webkitAudioContext)
+- Completely silent failure if not supported
+- No error logging to keep console clean
+
+---
+
+### **5. API Retry Wrapper**
+
+**Problem:** Network requests could fail temporarily due to connectivity issues.
+
+**Solution:** V2.1 wraps API calls with automatic retry logic:
+```javascript
+async function getAppointmentTime(date) {
+  const maxRetries = 3;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      log(`📡 Fetching time slots for ${date} (attempt ${attempt}/${maxRetries})...`);
+
+      const response = await fetch(url, options);
+
+      if (!response.ok) {
+        const continueOperation = await handleApiError(
+          new Error(`HTTP ${response.status}: ${response.statusText}`),
+          `getAppointmentTime for ${date}`
+        );
+        if (!continueOperation) return null;
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data; // Success!
+
+    } catch (error) {
+      if (attempt < maxRetries) {
+        log(`⚠️ Attempt ${attempt} failed: ${error.message}. Retrying in ${attempt} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      } else {
+        log(`❌ All ${maxRetries} attempts failed for ${date}`);
+        return null;
+      }
+    }
+  }
+}
+```
+
+**Key Features:**
+- Retries up to 3 times with exponential backoff (1s, 2s, 3s)
+- Integrates 401 error detection
+- Shows attempt progress in console
+- Returns null after all retries fail (graceful degradation)
+
+---
+
+### **6. Real-time Status Updates**
+
+**V2.1 UI enhancements:**
+```javascript
+// During parallel checking
+log("🚀 Running parallel checks for maximum speed...");
+
+// During time slot attempts
+log(`Trying time slot ${timeIndex + 1}/${timesData.available_times.length}: ${timeSlot}`);
+
+// During retry attempts
+log(`📅 Booking attempt ${attempt}/3...`);
+log(`⚠️ Attempt ${attempt} failed. Retrying in 2 seconds...`);
+
+// On success
+log("✅ BOOKING SUCCESSFUL! Confirming...");
+
+// On 401 error
+log("🔄 401 Unauthorized detected - Refreshing page to renew session...");
+```
+
+**Benefits:**
+- User sees exactly what's happening
+- Emoji-enhanced logs for easier scanning
+- Progress indicators (1/3, 2/5, etc.)
+- Clear success/failure messages
+
+---
+
+## 🔑 Key Components (Detailed)
+
+### **1. Initialization (Lines 31-53)**
 
 ```javascript
 // Extract variables from URL and localStorage
@@ -263,6 +543,11 @@ document.body.appendChild(progressPopup);
 ```
 
 **Purpose:** Set up all variables and create the control panel UI.
+
+**V2.1 Changes:**
+- No changes to initialization logic
+- Same hardcoded locations
+- Same UI popup creation
 
 ---
 
@@ -590,18 +875,35 @@ const locationMap = {
 ### **System Constants**
 
 ```javascript
-// Base check interval (3 minutes)
-checkInterval = 180000; // ms
+// Base check interval - REMOVED in V2.1
+// OLD V1: checkInterval = 180000 + getRandomDelay(); // 3 min + random
+// NEW V2.1: checkInterval = getRandomDelay(); // Only random delay
 
-// Delay between facility checks (1 second)
-await new Promise(resolve => setTimeout(resolve, 1000));
+// Delay between facility checks - REMOVED in V2.1 (parallel checking)
+// OLD V1: await new Promise(resolve => setTimeout(resolve, 1000));
+// NEW V2.1: No delays - all facilities checked simultaneously
 
-// Page refresh interval (10 minutes)
+// Retry delays (V2.1)
+const bookingRetryDelay = 2000; // 2 seconds between booking attempts
+const tokenRefreshDelay = 3000; // 3 seconds before page refresh on 401
+
+// Wait times during booking (V2.1)
+const afterFacilitySelectWait = 500;  // After selecting facility
+const afterDateSelectWait = 1000;     // After selecting date
+const afterTimeSelectWait = 1500;     // After selecting time
+
+// Page refresh interval (10 minutes) - still present
 setTimeout(..., 600000);
 
 // Far future date (if no appointment exists)
 new Date(864000000000); // ~27 years
 ```
+
+**V2.1 Key Changes:**
+- Removed hardcoded 180000ms (3 minute) base delay
+- Removed 1-second delays between facility checks
+- Added retry delays for booking attempts
+- Delays now fully controlled by user via UI
 
 ---
 
@@ -869,13 +1171,16 @@ const results = await Promise.all(
    - Increase random delays
    - Reduce check frequency
 
-2. **401 Unauthorized:** Session expired
-   - Log out and log back in
-   - Check cookies are enabled
+2. **401 Unauthorized:** Session expired (V2.1 handles this automatically!)
+   - Extension will detect 401 and auto-refresh page after 3 seconds
+   - You'll see: "🔄 401 Unauthorized detected - Refreshing page to renew session..."
+   - Just log back in after page refreshes and click Start again
+   - No more infinite retry loops!
 
 3. **500 Server Error:** Website issues
    - Wait and try again
    - Check if website is under maintenance
+   - Extension will retry automatically (up to 3 times)
 
 ---
 
@@ -892,9 +1197,15 @@ const results = await Promise.all(
    - Check for "ERROR: ... not found" in console
    - Website structure may have changed
 
-3. **Times not available:**
-   - Check "No available times found" in console
-   - Appointment may have been taken
+3. **Race condition - someone booked before you (V2.1 handles this!):**
+   - Extension now tries ALL available time slots
+   - Retries up to 3 times automatically
+   - You'll see: "Trying time slot 2/5...", "Attempt 2/3..."
+   - Much higher success rate than V1
+
+4. **Times not available:**
+   - If you see "❌ All 3 booking attempts failed", all slots were taken
+   - Extension continues checking for new appointments automatically
 
 ---
 
@@ -907,6 +1218,31 @@ const results = await Promise.all(
 2. Check z-index (should be 100000)
 3. Check if other elements are blocking it
 4. Inspect page to see if div exists
+
+---
+
+### **Audio Errors (V2.1.2 Fixed!)**
+
+**Symptoms:** Console shows "AudioContext is not defined" or similar audio errors
+
+**Solution (V2.1.2):**
+- Audio errors are now silently ignored (never block booking)
+- Extension works perfectly without audio
+- If you see audio errors, you can safely ignore them
+- No need to fix or worry about audio issues
+
+**Technical:**
+```javascript
+// V2.1.2 - Audio completely optional
+try {
+  if (typeof AudioContext === 'undefined') {
+    return; // Skip audio, continue with booking
+  }
+  // ... play audio
+} catch (e) {
+  // Silently fail - never log or block
+}
+```
 
 ---
 
@@ -978,8 +1314,8 @@ function sanitizeText(text) {
 ### **Potential Improvements**
 
 1. **Performance:**
-   - Implement parallel API calls
-   - Add response caching
+   - ✅ Parallel API calls (implemented in V2.1!)
+   - Response caching
    - Debounce UI updates
 
 2. **Features:**
@@ -987,6 +1323,7 @@ function sanitizeText(text) {
    - Multiple user profiles
    - Historical appointment tracking
    - Statistics dashboard
+   - ✅ Sound notifications (implemented in V2.1!)
 
 3. **Code Quality:**
    - Refactor into modules
@@ -995,9 +1332,9 @@ function sanitizeText(text) {
    - E2E tests
 
 4. **User Experience:**
-   - Better error messages
-   - Loading indicators
-   - Sound notifications
+   - ✅ Better error messages (implemented in V2.1!)
+   - ✅ Loading indicators (implemented in V2.1!)
+   - ✅ Sound notifications (implemented in V2.1!)
    - Dark mode
 
 ---
@@ -1061,30 +1398,43 @@ When Chrome releases Manifest V4:
 ### **What You've Learned:**
 
 1. ✅ Extension monitors 3 Canadian visa locations
-2. ✅ Checks every ~3 minutes with random delays
-3. ✅ Automatically books when criteria met
-4. ✅ All code in appointment.js (553 lines)
-5. ✅ Uses localStorage for settings
-6. ✅ No backend/server required
-7. ✅ XSS protection and error handling
-8. ✅ Start/Stop controls for user
+2. ✅ V2.1: Checks with fully customizable delays (1 sec to 5 min)
+3. ✅ V2.1: 3x faster with parallel facility checking
+4. ✅ V2.1: Race condition proof with retry logic
+5. ✅ V2.1: Auto session refresh on 401 errors
+6. ✅ All code in appointment.js (~800 lines)
+7. ✅ Uses localStorage for settings
+8. ✅ No backend/server required
+9. ✅ XSS protection and comprehensive error handling
+10. ✅ Real-time status updates and optional audio alerts
 
-### **Quick Reference:**
+### **Quick Reference (V2.1.2):**
 
 | Component | Lines | Purpose |
 |-----------|-------|---------|
-| Initialization | 31-68 | Setup variables, create UI |
-| UI Control Panel | 106-250 | Display status, controls |
-| Get Times API | 262-304 | Fetch available time slots |
-| Check Facility | 306-434 | Check if facility has appointments |
-| Main Logic | 436-526 | Check all facilities, book best |
-| Random Delay | 528-533 | Anti-detection timing |
-| Main Loop | 535-596 | Infinite automation loop |
+| Initialization | 31-53 | Setup variables, create UI |
+| Audio System | 54-107 | Optional sound alerts (V2.1) |
+| 401 Handler | 133-157 | Auto token refresh (V2.1) |
+| UI Control Panel | 172-377 | Display status, controls |
+| Get Times API | 389-448 | Fetch time slots with retry (V2.1) |
+| Check Facility | 450-604 | Check facility with 401 handling (V2.1) |
+| Parallel Checking | 605-640 | Check all facilities simultaneously (V2.1) |
+| Random Delay | 642-675 | User-controlled timing |
+| Booking Logic | 677-817 | Book with retry and multiple time slots (V2.1) |
+| Main Loop | 819-830 | Infinite automation loop |
+
+### **Version History:**
+
+- **V1.31:** Initial version with sequential checking, hardcoded 3-minute delays
+- **V2.0:** Parallel checking, retry logic, audio alerts, improved UI
+- **V2.1:** Added 401 error detection and auto token refresh
+- **V2.1.1:** Removed proactive HEAD validation to fix intermittent errors
+- **V2.1.2:** Made audio completely optional with silent failure (current)
 
 ---
 
-**Developer Guide Version:** 1.0
-**Last Updated:** 2025-10-27
+**Developer Guide Version:** 2.1.2
+**Last Updated:** 2025-11-10
 **Maintained By:** Development Team
 **Status:** Production Ready ✅
 

@@ -1,33 +1,51 @@
-# USA Visa Appointment Extension V2
+# USA Visa Appointment Extension V2.1
 
 ## What It Is
 
-Automated Chrome, (Brave, Vivaldi or any chrome fork) extension that monitors the US visa appointment system and automatically books earlier appointment dates when they become available.
+Automated Chrome extension that monitors the US visa appointment system and **automatically books earlier appointment dates** when they become available.
 
 **Target Website:** `https://ais.usvisa-info.com/[country]/niv/schedule/[userId]/appointment`
-Give a ⭐ if you find this useful
+
+⭐ Give a star if you find this useful!
+
+---
+
+## Why You Need This
+
+**The Problem:**
+- Visa appointments are released randomly, often at 7pm EST
+- Slots get booked in seconds before you can react
+- You miss appointments because you're not fast enough
+
+**The Solution:**
+- This extension checks 24/7 for earlier appointments
+- Books automatically the moment a slot appears
+- **3x faster** than manual checking
+- Handles race conditions (tries all time slots)
+- Never gives up (retries 3 times if booking fails)
 
 ---
 
 ## Key Features
 
-### Core Features
-- **Lightning-fast parallel checking** - Checks all locations simultaneously for maximum speed
-- Multi-location checking (Toronto, Calgary, Vancouver)
-- Automatic booking when better dates are found
-- Date range filtering
-- Start/Stop controls
-- Fully customizable delay settings (1 second to 5 minutes)
+### Speed & Reliability
+- ⚡ **3x Faster** - Checks all 3 locations simultaneously (not one by one)
+- 🎯 **Race Condition Proof** - Tries ALL available time slots, not just the first
+- 🔄 **Smart Retry** - Automatically retries up to 3 times if booking fails
+- 🔐 **Auto Token Refresh** - Detects expired sessions and refreshes automatically
+- 🛡️ **Never Stops** - Continues checking even after failures
 
-### V2 Enhancements (New!)
-- 🚀 **Parallel Facility Checking** - All locations checked simultaneously instead of sequentially
-- 🔄 **Smart Retry Logic** - Up to 3 automatic retry attempts if booking fails
-- 🎯 **Multiple Time Slot Attempts** - Tries ALL available time slots, not just the first one
-- 🔐 **Session Validation** - Automatically checks if you're still logged in
-- 🔔 **Audio Alerts** - Sound notifications when appointments are found or booking succeeds/fails
-- 📊 **Real-time Status Updates** - See exactly what's happening with booking attempts
-- 🛡️ **Enhanced Error Recovery** - Robust error handling for edge cases and race conditions
-- 📝 **Detailed Logging** - Better debugging with emoji-enhanced console logs
+### User Experience
+- 📊 **Real-time Status** - See exactly what's happening
+- 🔔 **Audio Alerts** - Optional sounds when appointments found (never blocks booking)
+- ⚙️ **Fully Customizable** - Set check frequency from 1 second to 5 minutes
+- 🎨 **Clean Console** - No false errors or noise
+
+### Smart Features
+- **Date Range Filtering** - Only book appointments in your preferred date range
+- **Multi-location** - Checks Toronto, Calgary, and Vancouver simultaneously
+- **Start/Stop Controls** - Pause and resume anytime
+- **Session Safe** - Uses your browser session, no passwords stored
 
 ---
 
@@ -109,112 +127,98 @@ The control panel shows:
 
 ### Checking Process
 
-1. Every ~3 minutes (plus random delay), the extension:
-   - Checks all 3 locations for available appointments
-   - Compares dates with your current appointment
-   - Applies your date range filters
-   - Identifies the best (earliest) appointment
+The extension checks based on your configured delay (default: every 5-30 seconds):
+- Checks all 3 locations **simultaneously** for speed
+- Compares dates with your current appointment
+- Applies your date range filters
+- Finds the earliest available appointment
 
-### Booking Process (V2 Enhanced)
+### Booking Process
 
-When a qualifying appointment is found:
+When an earlier appointment is found:
 
-1. **Sound Alert** - Plays an audio notification
-2. **Session Validation** - Verifies you're still logged in
-3. **Facility Selection** - Selects the facility from dropdown
-4. **Date Selection** - Sets the appointment date
-5. **Fetch Time Slots** - Gets all available times with retry logic (up to 3 attempts)
-6. **Smart Time Selection** - Tries ALL available time slots until one succeeds
-7. **Form Submission** - Submits the appointment form
-8. **Confirmation** - Confirms the booking
-9. **Success Alert** - Plays success sound and shows status
-10. **Redirect** - Redirects to your account page
+1. **Alert** - Optional sound notification (never blocks booking)
+2. **Select Location** - Picks the facility with the earlier date
+3. **Select Date** - Sets the appointment date
+4. **Get Time Slots** - Fetches all available times (retries up to 3 times if needed)
+5. **Try Each Time** - Attempts to book each available time slot until one succeeds
+6. **Confirm** - Completes the booking
+7. **Done** - Shows success status and redirects to your account
 
 **If Booking Fails:**
-- Automatically retries up to 3 times
-- Tries different time slots on each attempt
-- Shows detailed error messages
-- Continues checking for more appointments if all retries fail
+- Tries different time slots automatically
+- Retries up to 3 times
+- Continues checking for new appointments if all attempts fail
 
 ---
 
-## Safety Features
+## Safety & Security
 
-- **Random Delays:** Prevents detection by varying check intervals (fully customizable from UI)
-- **XSS Protection:** All user inputs are sanitized
-- **Error Handling:** Graceful handling of API failures with automatic retry
-- **Session Management:** Uses your existing browser session with automatic validation
-- **No External Servers:** 100% client-side operation
-- **Rate Limiting Protection:** Configurable delays and retry logic to avoid triggering security measures
+- **Random Delays:** Customizable delays between checks to avoid detection
+- **Session Safe:** Uses your existing browser login, no passwords stored
+- **Auto Token Refresh:** Detects when you're logged out and refreshes automatically
+- **100% Local:** Runs entirely in your browser, no external servers
+- **Input Sanitization:** All settings are validated and sanitized
+- **Error Recovery:** Handles failures gracefully and keeps running
 
 ---
 
-## V2 Performance Optimizations
+## Tips for Peak Times (7pm EST)
 
-### For Peak Times (7pm EST slot openings)
+When new slots open at 7pm EST, they get booked in seconds. Here's how to maximize your chances:
 
-When slots open at 7pm EST, every millisecond counts. V2 is optimized for these scenarios:
+**Recommended Settings:**
+- **Min Delay:** 1 second
+- **Max Delay:** 3 seconds
+- **Result:** Checks every 1-3 seconds across all locations
 
-1. **Set Aggressive Timing:**
-   - Min Delay: 1-2 seconds
-   - Max Delay: 2-5 seconds
+**Why This Works:**
+- All 3 locations checked at the same time (not one by one)
+- If someone books before you, automatically tries the next available time
+- Retries up to 3 times if booking fails
+- Never stops checking until you get an appointment
 
-2. **Parallel Checking:**
-   - All 3 locations checked simultaneously
-   - No sequential delays between facilities
-
-3. **Race Condition Handling:**
-   - If someone books the slot before you, automatically tries next time slot
-   - Up to 3 retry attempts
-   - Tries all available times, not just the first one
-
-4. **Speed Improvements:**
-   - Reduced wait times between steps
-   - Parallel API calls where possible
-   - Immediate booking attempt when slot found
-
-**Example Configuration for Peak Times:**
-```
-Min Delay: 1 second
-Max Delay: 3 seconds
-Result: Checks every 1-3 seconds across all locations
-```
+**Before Peak Time:**
+- Log into the visa portal
+- Navigate to the appointment page
+- Start the extension
+- Leave the browser window open
 
 ---
 
 ## Troubleshooting
 
-### Extension Not Working
+### Extension Not Showing Up
 
-- Ensure you're logged into the visa portal
-- Check that you're on the appointment scheduling page
-- Open DevTools (F12) and check Console for errors
-- Verify extension is enabled in `chrome://extensions/`
+- Make sure you're logged into the visa portal
+- Navigate to the appointment scheduling page
+- Check extension is enabled at `chrome://extensions/`
+- Refresh the page if needed
 
 ### No Appointments Found
 
-- This is normal - appointments may not be available
-- The extension will keep checking automatically
-- Check console logs for detailed status
+- This is normal - appointments may not be available right now
+- The extension keeps checking automatically
+- Be patient and let it run
 
-### API Errors
+### Session Expired / Logged Out
 
-- **403 Forbidden:** Increase random delays or reduce check frequency
-- **401 Unauthorized:** Extension will auto-detect and stop. Log back in and restart
-- **500 Server Error:** Website may be under maintenance, try later
+- Extension detects this automatically
+- It will refresh the page to get a new session
+- If you see "401 Unauthorized", just log back in and restart
 
-### Audio Not Working
+### Booking Failed
 
-- Check browser permissions - allow sound for the visa website
-- Some browsers require user interaction before playing audio
-- Click on the page once to activate audio context
+- Extension tries up to 3 times automatically
+- It tries different time slots if first one fails
+- Check console (F12) for detailed status
+- If all attempts fail, it continues checking for new appointments
 
-### Booking Attempts Failing
+### Audio Errors
 
-- Check console logs for detailed error messages
-- V2 shows real-time status in the control panel
-- Extension will retry automatically up to 3 times
-- If all retries fail, it continues checking for new appointments
+- Audio is optional and never blocks booking
+- If you see audio errors, you can ignore them
+- The extension works perfectly fine without sound
 
 ---
 
@@ -227,52 +231,47 @@ Result: Checks every 1-3 seconds across all locations
 
 ---
 
+## What's New in V2.1
+
+### Major Improvements
+- **3x Faster** - Checks all locations at the same time instead of one by one
+- **Race Condition Proof** - If someone books before you, tries the next time slot automatically
+- **Smart Retry** - Automatically retries up to 3 times with different time slots
+- **Auto Session Refresh** - Detects when you're logged out and refreshes automatically
+- **Audio Alerts** - Optional sound notifications (never blocks booking)
+- **Real-time Status** - See exactly what's happening in the control panel
+
+### Bug Fixes
+- Fixed delay settings not being applied correctly
+- Fixed session expiry causing infinite retry loops
+- Made audio completely optional to prevent errors
+- Removed intermittent network errors from console
+
+---
+
 ## Technical Details
 
-- **No Backend:** Runs entirely in your browser
-- **Storage:** Uses localStorage for settings (no passwords stored)
-- **Security:** All API calls use HTTPS with your session cookies
-- **Main File:** `appointment.js` (~770 lines with V2 enhancements)
-- **V2 Architecture:**
+For developers and technical users:
+
+- **Architecture:** Chrome Extension Manifest V3
+- **Main Logic:** [appointment.js](appointment.js) (~800 lines)
+- **Key Technologies:**
   - Parallel async operations with `Promise.allSettled`
-  - Recursive retry logic with exponential backoff
-  - Web Audio API for sound notifications
-  - Session validation via HEAD requests
+  - Retry logic with 3 attempts
+  - Web Audio API for optional sound alerts
+  - 401 error detection for auto token refresh
+- **Storage:** localStorage for settings only (no passwords)
+- **Security:** Uses your existing browser session cookies
+- **No Backend:** 100% client-side operation
 
 ---
 
-## What's New in V2
+## Files
 
-### Speed & Reliability
-- **3x faster checking** - Parallel facility checks instead of sequential
-- **Race condition resistant** - Tries multiple time slots and retries automatically
-- **No more missed slots** - Even if first time fails, tries all available times
-
-### User Experience
-- **Real-time feedback** - See exactly what's happening
-- **Audio alerts** - Know when appointments are found without watching
-- **Better error messages** - Understand what went wrong and what's being tried
-
-### Technical Improvements
-- **Session monitoring** - Auto-detects when you're logged out
-- **API retry logic** - Handles temporary network failures
-- **Enhanced logging** - Emoji-enhanced console logs for easier debugging
-- **Robust error recovery** - Continues working even after failures
-
----
-
-## Configuration Files
-
-- `manifest.json` - Extension configuration
-- `appointment.js` - Main automation logic
-- `instructions.js` - Extracts current appointment date
-- `home.js`, `signin.js` - Navigation helpers
-
----
-
-## Support
-
-For detailed technical documentation, see `docs/dev_docs.md`
+- [manifest.json](manifest.json) - Extension configuration
+- [appointment.js](appointment.js) - Main automation logic (~800 lines)
+- [instructions.js](instructions.js) - Extracts current appointment date
+- [home.js](home.js), [signin.js](signin.js) - Navigation helpers
 
 ---
 
