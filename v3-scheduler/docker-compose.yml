@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: visa-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-visa_scheduler}
+      POSTGRES_USER: ${DB_USER:-visabot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - visa-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-visabot} -d ${DB_NAME:-visa_scheduler}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"  # Expose for debugging (remove in production)
+
+  scheduler:
+    build: ./scheduler
+    container_name: visa-scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - TZ=${TZ:-America/New_York}
+
+      # Database
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-visa_scheduler}
+      - DB_USER=${DB_USER:-visabot}
+      - DB_PASSWORD=${DB_PASSWORD}
+
+      # Visa Portal Credentials
+      - VISA_EMAIL=${VISA_EMAIL}
+      - VISA_PASSWORD=${VISA_PASSWORD}
+      - COUNTRY_CODE=${COUNTRY_CODE:-ca}
+      - USER_ID=${USER_ID:-}
+
+      # Target Facilities
+      - FACILITIES=${FACILITIES:-94,89,95}
+
+      # Scheduling
+      - CHECK_START_HOUR=${CHECK_START_HOUR:-19}
+      - CHECK_END_HOUR=${CHECK_END_HOUR:-5}
+      - CHECK_INTERVAL_MIN=${CHECK_INTERVAL_MIN:-5}
+
+      # Booking Settings
+      - MAX_BOOKING_RETRIES=${MAX_BOOKING_RETRIES:-3}
+      - START_DATE_FILTER=${START_DATE_FILTER:-}
+      - END_DATE_FILTER=${END_DATE_FILTER:-}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # Encryption
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+    networks:
+      - visa-network
+    restart: unless-stopped
+    volumes:
+      - ./scheduler/logs:/app/logs
+    shm_size: 2gb  # Important for Playwright/Chromium
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: visa-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@visascheduler.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - visa-network
+    restart: unless-stopped
+    profiles:
+      - debug  # Only start with --profile debug
+
+networks:
+  visa-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
