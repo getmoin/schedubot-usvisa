@@ -96,7 +96,8 @@ export async function saveBrowserSession(): Promise<void> {
   }
 
   const cookies = await context.cookies();
-  const userAgent = await getPage().evaluate(() => navigator.userAgent);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const userAgent = await getPage().evaluate(() => (globalThis as any).navigator.userAgent);
 
   await saveSession(cookies, userAgent);
   logger.info('Browser session saved to database');

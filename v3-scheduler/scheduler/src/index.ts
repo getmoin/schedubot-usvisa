@@ -2,12 +2,11 @@
 
 import { config, validateConfig } from './config/env';
 import { initDatabase, closeDatabase } from './database/client';
-import { saveCredentials, getCredentials, getCurrentAppointment } from './database/queries';
+import { saveCredentials, getCurrentAppointment } from './database/queries';
 import { logger, log } from './utils/logger';
 import { initBrowser, closeBrowser } from './browser/init';
-import { login, ensureLoggedIn } from './browser/login';
+import { ensureLoggedIn } from './browser/login';
 import { runContinuousLoop } from './scheduler/loop';
-import { isWithinCheckingWindow } from './utils/time';
 
 /**
  * Main application entry point

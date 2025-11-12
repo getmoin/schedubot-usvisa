@@ -47,8 +47,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (including devDependencies for TypeScript build)
+RUN npm install 
 
 # Install Playwright browsers
 RUN npx playwright install chromium

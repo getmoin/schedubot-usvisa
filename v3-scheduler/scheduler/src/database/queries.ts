@@ -1,4 +1,4 @@
-import { query, getClient, transaction } from './client';
+import { query, transaction } from './client';
 import { encrypt, decrypt } from '../utils/crypto';
 import { createModuleLogger } from '../utils/logger';
 

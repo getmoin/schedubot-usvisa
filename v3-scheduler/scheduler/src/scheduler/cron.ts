@@ -19,7 +19,9 @@ export function startScheduler(): void {
     return;
   }
 
-  const intervalMin = config.schedule.checkIntervalMin;
+  // NOTE: This cron scheduler is no longer used in V3 (using continuous loop instead)
+  // Keeping this file for backward compatibility but not actively used
+  const intervalMin = 5; // Legacy default
 
   // Create cron expression based on interval
   // Format: */interval start-end,start-end * * *

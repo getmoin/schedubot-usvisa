@@ -7,7 +7,6 @@ logs
 .git
 .gitignore
 *.md
-tsconfig.json
 .vscode
 .idea
 coverage

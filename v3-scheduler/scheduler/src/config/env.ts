@@ -64,9 +64,14 @@ function getEnvVar(name: string, defaultValue?: string): string {
 
 function parseDate(dateStr?: string): Date | undefined {
   if (!dateStr || dateStr.trim() === '') return undefined;
-  const date = new Date(dateStr);
+
+  // Remove comments (anything after #)
+  const cleanedStr = dateStr.split('#')[0].trim();
+  if (cleanedStr === '') return undefined;
+
+  const date = new Date(cleanedStr);
   if (isNaN(date.getTime())) {
-    throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
+    throw new Error(`Invalid date format: ${cleanedStr}. Expected YYYY-MM-DD`);
   }
   return date;
 }

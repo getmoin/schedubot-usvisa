@@ -48,10 +48,12 @@ services:
       # Target Facilities
       - FACILITIES=${FACILITIES:-94,89,95}
 
-      # Scheduling
+      # Scheduling (V2-style continuous loop)
       - CHECK_START_HOUR=${CHECK_START_HOUR:-19}
       - CHECK_END_HOUR=${CHECK_END_HOUR:-5}
-      - CHECK_INTERVAL_MIN=${CHECK_INTERVAL_MIN:-5}
+      - MIN_DELAY_SEC=${MIN_DELAY_SEC:-5}
+      - MAX_DELAY_SEC=${MAX_DELAY_SEC:-30}
+      - SESSION_REFRESH_MIN=${SESSION_REFRESH_MIN:-10}
 
       # Booking Settings
       - MAX_BOOKING_RETRIES=${MAX_BOOKING_RETRIES:-3}

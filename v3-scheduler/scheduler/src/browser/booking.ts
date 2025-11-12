@@ -3,7 +3,7 @@ import { handleSessionError, isSessionExpired } from './session';
 import { config } from '../config/env';
 import { createModuleLogger, log } from '../utils/logger';
 import { logAppointmentCheck, logBookingAttempt, getCurrentAppointment, updateCurrentAppointment } from '../database/queries';
-import { formatDate, sleep } from '../utils/time';
+import { sleep } from '../utils/time';
 
 const logger = createModuleLogger('Booking');
 
@@ -65,14 +65,15 @@ async function getAppointmentTimes(
       }, url);
 
       if (result.error) {
-        if (isSessionExpired(result.status)) {
+        if (isSessionExpired(result.status as number)) {
           await handleSessionError(new Error(`HTTP ${result.status}: ${result.statusText}`));
         }
         throw new Error(`HTTP ${result.status}: ${result.statusText}`);
       }
 
-      log.success(`✅ Found ${result.data.available_times?.length || 0} time slots`);
-      return result.data;
+      const timesData = result.data as TimeSlotsData;
+      log.success(`✅ Found ${timesData.available_times?.length || 0} time slots`);
+      return timesData;
     } catch (error: any) {
       logger.warn(`Attempt ${attempt} failed: ${error.message}`);
       if (attempt === retries) {
@@ -125,7 +126,7 @@ async function checkFacilityForAppointments(
     }, url);
 
     if (result.error) {
-      if (isSessionExpired(result.status)) {
+      if (isSessionExpired(result.status as number)) {
         await handleSessionError(new Error(`HTTP ${result.status}: ${result.statusText}`));
       }
 
@@ -389,21 +390,23 @@ export async function checkAndBook(userId: string): Promise<boolean> {
   // Find best appointment from all results
   let bestAppointment: AppointmentData | null = null;
   results.forEach((result) => {
-    if (result.status === 'fulfilled' && result.value) {
-      if (!bestAppointment || new Date(result.value.date) < new Date(bestAppointment.date)) {
-        bestAppointment = result.value;
+    if (result.status === 'fulfilled' && result.value !== null) {
+      const appointment = result.value as AppointmentData;
+      if (!bestAppointment || new Date(appointment.date) < new Date(bestAppointment.date)) {
+        bestAppointment = appointment;
       }
     }
   });
 
   // If we found a better appointment, book it
-  if (bestAppointment) {
+  if (bestAppointment !== null) {
+    const appointment: AppointmentData = bestAppointment;
     log.found('🎉 *** BETTER APPOINTMENT FOUND ***');
-    log.found(`📍 Location: ${bestAppointment.facilityName}`);
-    log.found(`📅 Date: ${bestAppointment.date}`);
+    log.found(`📍 Location: ${appointment.facilityName}`);
+    log.found(`📅 Date: ${appointment.date}`);
     log.found('='.repeat(50));
 
-    const bookingSuccess = await attemptBooking(userId, bestAppointment);
+    const bookingSuccess = await attemptBooking(userId, appointment);
 
     if (bookingSuccess) {
       log.success('✅ BOOKING SUCCESSFUL - Will check again for even better dates!');

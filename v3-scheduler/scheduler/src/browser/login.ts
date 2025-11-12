@@ -45,12 +45,20 @@ export async function login(): Promise<string> {
   await page.fill('input[name="user[password]"]', password);
 
   // Check "I agree to terms"
-  const termsCheckbox = page.locator('input[name="policy_confirmed"]');
-  if (await termsCheckbox.isVisible()) {
-    await termsCheckbox.check();
-  }
+  // V2 extension approach: Set checked property directly via JavaScript
+  await page.evaluate(() => {
+    const checkbox = (globalThis as any).document.getElementById('policy_confirmed');
+    if (checkbox) {
+      checkbox.checked = true;
+    }
+  });
+  log.session('✅ Terms checkbox checked');
+
+  // Wait a bit for any JavaScript to process
+  await sleep(500);
 
   // Submit form
+  log.session('🔐 Submitting login form...');
   await page.click('input[name="commit"]');
 
   // Wait for navigation
